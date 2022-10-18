@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/chanzuckerberg/terraform-provider-snowflake/pkg/snowflake"
+	"github.com/Snowflake-Labs/terraform-provider-snowflake/pkg/snowflake"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/pkg/errors"
@@ -114,8 +114,8 @@ type taskID struct {
 	TaskName     string
 }
 
-//String() takes in a taskID object and returns a pipe-delimited string:
-//DatabaseName|SchemaName|TaskName
+// String() takes in a taskID object and returns a pipe-delimited string:
+// DatabaseName|SchemaName|TaskName.
 func (t *taskID) String() (string, error) {
 	var buf bytes.Buffer
 	csvWriter := csv.NewWriter(&buf)
@@ -129,7 +129,7 @@ func (t *taskID) String() (string, error) {
 	return strTaskID, nil
 }
 
-// difference find keys in a but not in b
+// difference find keys in a but not in b.
 func difference(a, b map[string]interface{}) map[string]interface{} {
 	diff := make(map[string]interface{})
 	for k := range a {
@@ -140,7 +140,7 @@ func difference(a, b map[string]interface{}) map[string]interface{} {
 	return diff
 }
 
-// getActiveRootTask tries to retrieve the root of current task or returns the current (standalone) task
+// getActiveRootTask tries to retrieve the root of current task or returns the current (standalone) task.
 func getActiveRootTask(data *schema.ResourceData, meta interface{}) (*snowflake.TaskBuilder, error) {
 	log.Println("[DEBUG] retrieving root task")
 
@@ -170,8 +170,9 @@ func getActiveRootTask(data *schema.ResourceData, meta interface{}) (*snowflake.
 			return nil, errors.Wrapf(err, "failed to locate the root node of: %v", name)
 		}
 
-		if task.Predecessors == nil {
-			log.Println(fmt.Sprintf("[DEBUG] found root task: %v", name))
+		currentName := task.GetPredecessorName()
+		if currentName == "" {
+			log.Printf("[DEBUG] found root task: %v", name)
 			// we only want to deal with suspending the root task when its enabled (started)
 			if task.IsEnabled() {
 				return snowflake.Task(name, database, dbSchema), nil
@@ -179,11 +180,11 @@ func getActiveRootTask(data *schema.ResourceData, meta interface{}) (*snowflake.
 			return nil, nil
 		}
 
-		name = task.GetPredecessorName()
+		name = currentName
 	}
 }
 
-// getActiveRootTaskAndSuspend retrieves the root task and suspends it
+// getActiveRootTaskAndSuspend retrieves the root task and suspends it.
 func getActiveRootTaskAndSuspend(data *schema.ResourceData, meta interface{}) (*snowflake.TaskBuilder, error) {
 	db := meta.(*sql.DB)
 	name := data.Get("name").(string)
@@ -222,13 +223,13 @@ func resumeTask(root *snowflake.TaskBuilder, meta interface{}) {
 }
 
 // taskIDFromString() takes in a pipe-delimited string: DatabaseName|SchemaName|TaskName
-// and returns a taskID object
+// and returns a taskID object.
 func taskIDFromString(stringID string) (*taskID, error) {
 	reader := csv.NewReader(strings.NewReader(stringID))
 	reader.Comma = pipeIDDelimiter
 	lines, err := reader.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("Not CSV compatible")
+		return nil, fmt.Errorf("not CSV compatible")
 	}
 
 	if len(lines) != 1 {
@@ -246,7 +247,7 @@ func taskIDFromString(stringID string) (*taskID, error) {
 	return taskResult, nil
 }
 
-// Task returns a pointer to the resource representing a task
+// Task returns a pointer to the resource representing a task.
 func Task() *schema.Resource {
 	return &schema.Resource{
 		Create: CreateTask,
@@ -261,7 +262,7 @@ func Task() *schema.Resource {
 	}
 }
 
-// ReadTask implements schema.ReadFunc
+// ReadTask implements schema.ReadFunc.
 func ReadTask(d *schema.ResourceData, meta interface{}) error {
 	db := meta.(*sql.DB)
 	taskID, err := taskIDFromString(d.Id())
@@ -332,8 +333,9 @@ func ReadTask(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	if t.Predecessors != nil {
-		err = d.Set("after", t.GetPredecessorName())
+	predecessorName := t.GetPredecessorName()
+	if predecessorName != "" {
+		err = d.Set("after", predecessorName)
 		if err != nil {
 			return err
 		}
@@ -392,6 +394,7 @@ func ReadTask(d *schema.ResourceData, meta interface{}) error {
 		}
 
 		for key, value := range fieldParameters {
+			//lintignore:R001
 			err = d.Set(key, value)
 			if err != nil {
 				return err
@@ -403,7 +406,7 @@ func ReadTask(d *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
-// CreateTask implements schema.CreateFunc
+// CreateTask implements schema.CreateFunc.
 func CreateTask(d *schema.ResourceData, meta interface{}) error {
 
 	var err error
@@ -488,7 +491,7 @@ func CreateTask(d *schema.ResourceData, meta interface{}) error {
 	return ReadTask(d, meta)
 }
 
-// UpdateTask implements schema.UpdateFunc
+// UpdateTask implements schema.UpdateFunc.
 func UpdateTask(d *schema.ResourceData, meta interface{}) error {
 	taskID, err := taskIDFromString(d.Id())
 	var needResumeCurrentTask = false
@@ -620,7 +623,7 @@ func UpdateTask(d *schema.ResourceData, meta interface{}) error {
 		var (
 			q string
 		)
-		_, new := d.GetChange("after")
+		new := d.Get("after")
 
 		if new != "" {
 			q = builder.AddDependency(new.(string))
@@ -675,7 +678,7 @@ func UpdateTask(d *schema.ResourceData, meta interface{}) error {
 
 	if d.HasChange("sql_statement") {
 		new := d.Get("sql_statement")
-		q := builder.ChangeSqlStatement(new.(string))
+		q := builder.ChangeSQLStatement(new.(string))
 		err := snowflake.Exec(db, q)
 		if err != nil {
 			return errors.Wrapf(err, "error updating sql statement on task %v", d.Id())
@@ -713,7 +716,7 @@ func UpdateTask(d *schema.ResourceData, meta interface{}) error {
 	return ReadTask(d, meta)
 }
 
-// DeleteTask implements schema.DeleteFunc
+// DeleteTask implements schema.DeleteFunc.
 func DeleteTask(d *schema.ResourceData, meta interface{}) error {
 	db := meta.(*sql.DB)
 	taskID, err := taskIDFromString(d.Id())
@@ -744,30 +747,4 @@ func DeleteTask(d *schema.ResourceData, meta interface{}) error {
 	d.SetId("")
 
 	return nil
-}
-
-// TaskExists implements schema.ExistsFunc
-func TaskExists(data *schema.ResourceData, meta interface{}) (bool, error) {
-	db := meta.(*sql.DB)
-	taskID, err := taskIDFromString(data.Id())
-	if err != nil {
-		return false, err
-	}
-
-	database := taskID.DatabaseName
-	schema := taskID.SchemaName
-	name := taskID.TaskName
-
-	q := snowflake.Task(name, database, schema).Show()
-	rows, err := db.Query(q)
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-
-	if rows.Next() {
-		return true, nil
-	}
-
-	return false, nil
 }
