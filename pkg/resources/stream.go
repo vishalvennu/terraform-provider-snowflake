@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"database/sql"
 
+<<<<<<< HEAD
 	"github.com/chanzuckerberg/terraform-provider-snowflake/pkg/snowflake"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+=======
+	"github.com/Snowflake-Labs/terraform-provider-snowflake/pkg/snowflake"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
 	"github.com/pkg/errors"
 
 	"encoding/csv"
@@ -14,8 +19,8 @@ import (
 )
 
 const (
-	streamIDDelimiter        = '|'
-	streamOnTableIDDelimiter = '.'
+	streamIDDelimiter         = '|'
+	streamOnObjectIDDelimiter = '.'
 )
 
 var streamSchema = map[string]*schema.Schema{
@@ -43,9 +48,24 @@ var streamSchema = map[string]*schema.Schema{
 		Description: "Specifies a comment for the stream.",
 	},
 	"on_table": {
+<<<<<<< HEAD
 		Type:        schema.TypeString,
 		Optional:    true,
 		Description: "Name of the table the stream will monitor.",
+=======
+		Type:         schema.TypeString,
+		Optional:     true,
+		ForceNew:     true,
+		Description:  "Name of the table the stream will monitor.",
+		ExactlyOneOf: []string{"on_table", "on_view"},
+	},
+	"on_view": {
+		Type:         schema.TypeString,
+		Optional:     true,
+		ForceNew:     true,
+		Description:  "Name of the view the stream will monitor.",
+		ExactlyOneOf: []string{"on_table", "on_view"},
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
 	},
 	"append_only": {
 		Type:        schema.TypeBool,
@@ -80,14 +100,14 @@ type streamID struct {
 	StreamName   string
 }
 
-type streamOnTableID struct {
+type streamOnObjectID struct {
 	DatabaseName string
 	SchemaName   string
-	OnTableName  string
+	Name         string
 }
 
-//String() takes in a streamID object and returns a pipe-delimited string:
-//DatabaseName|SchemaName|StreamName
+// String() takes in a streamID object and returns a pipe-delimited string:
+// DatabaseName|SchemaName|StreamName.
 func (si *streamID) String() (string, error) {
 	var buf bytes.Buffer
 	csvWriter := csv.NewWriter(&buf)
@@ -102,13 +122,13 @@ func (si *streamID) String() (string, error) {
 }
 
 // streamIDFromString() takes in a pipe-delimited string: DatabaseName|SchemaName|StreamName
-// and returns a streamID object
+// and returns a streamID object.
 func streamIDFromString(stringID string) (*streamID, error) {
 	reader := csv.NewReader(strings.NewReader(stringID))
 	reader.Comma = streamIDDelimiter
 	lines, err := reader.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("Not CSV compatible")
+		return nil, fmt.Errorf("not CSV compatible")
 	}
 
 	if len(lines) != 1 {
@@ -126,14 +146,14 @@ func streamIDFromString(stringID string) (*streamID, error) {
 	return streamResult, nil
 }
 
-// streamOnTableIDFromString() takes in a dot-delimited string: DatabaseName.SchemaName.TableName
-// and returns a streamOnTableID object
-func streamOnTableIDFromString(stringID string) (*streamOnTableID, error) {
+// streamOnObjectIDFromString() takes in a dot-delimited string: DatabaseName.SchemaName.TableName
+// and returns a streamOnObjectID object.
+func streamOnObjectIDFromString(stringID string) (*streamOnObjectID, error) {
 	reader := csv.NewReader(strings.NewReader(stringID))
-	reader.Comma = streamOnTableIDDelimiter
+	reader.Comma = streamOnObjectIDDelimiter
 	lines, err := reader.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("Not CSV compatible")
+		return nil, fmt.Errorf("not CSV compatible")
 	}
 
 	if len(lines) != 1 {
@@ -144,14 +164,15 @@ func streamOnTableIDFromString(stringID string) (*streamOnTableID, error) {
 		return nil, fmt.Errorf("invalid format for on_table: %v , expected: <database_name.schema_name.target_table_name>", strings.Join(lines[0], "."))
 	}
 
-	streamOnTableResult := &streamOnTableID{
+	streamOnTableResult := &streamOnObjectID{
 		DatabaseName: lines[0][0],
 		SchemaName:   lines[0][1],
-		OnTableName:  lines[0][2],
+		Name:         lines[0][2],
 	}
 	return streamOnTableResult, nil
 }
 
+<<<<<<< HEAD
 // CreateStream implements schema.CreateFunc
 func CreateStream(data *schema.ResourceData, meta interface{}) error {
 	db := meta.(*sql.DB)
@@ -160,15 +181,58 @@ func CreateStream(data *schema.ResourceData, meta interface{}) error {
 	name := data.Get("name").(string)
 	onTable := data.Get("on_table").(string)
 	appendOnly := data.Get("append_only").(bool)
+=======
+// CreateStream implements schema.CreateFunc.
+func CreateStream(d *schema.ResourceData, meta interface{}) error {
+	db := meta.(*sql.DB)
+	database := d.Get("database").(string)
+	schema := d.Get("schema").(string)
+	name := d.Get("name").(string)
+	appendOnly := d.Get("append_only").(bool)
+	insertOnly := d.Get("insert_only").(bool)
+	showInitialRows := d.Get("show_initial_rows").(bool)
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
 
 	builder := snowflake.Stream(name, database, schema)
 
-	resultOnTable, err := streamOnTableIDFromString(onTable)
-	if err != nil {
-		return err
+	onTable, onTableSet := d.GetOk("on_table")
+	onView, onViewSet := d.GetOk("on_view")
+
+	if (onTableSet && onViewSet) || !(onTableSet || onViewSet) {
+		return fmt.Errorf("exactly one of 'on_table' or 'on_view' expected")
+	} else if onTableSet {
+		id, err := streamOnObjectIDFromString(onTable.(string))
+		if err != nil {
+			return err
+		}
+
+		tq := snowflake.Table(id.Name, id.DatabaseName, id.SchemaName).Show()
+		tableRow := snowflake.QueryRow(db, tq)
+
+		t, err := snowflake.ScanTable(tableRow)
+		if err != nil {
+			return err
+		}
+
+		builder.WithExternalTable(t.IsExternal.String == "Y")
+		builder.WithOnTable(t.DatabaseName.String, t.SchemaName.String, t.TableName.String)
+	} else if onViewSet {
+		id, err := streamOnObjectIDFromString(onView.(string))
+		if err != nil {
+			return err
+		}
+
+		tq := snowflake.View(id.Name).WithDB(id.DatabaseName).WithSchema(id.SchemaName).Show()
+		viewRow := snowflake.QueryRow(db, tq)
+
+		t, err := snowflake.ScanView(viewRow)
+		if err != nil {
+			return err
+		}
+
+		builder.WithOnView(t.DatabaseName.String, t.SchemaName.String, t.Name.String)
 	}
 
-	builder.WithOnTable(resultOnTable.DatabaseName, resultOnTable.SchemaName, resultOnTable.OnTableName)
 	builder.WithAppendOnly(appendOnly)
 
 	// Set optionals
@@ -177,7 +241,7 @@ func CreateStream(data *schema.ResourceData, meta interface{}) error {
 	}
 
 	stmt := builder.Create()
-	err = snowflake.Exec(db, stmt)
+	err := snowflake.Exec(db, stmt)
 	if err != nil {
 		return errors.Wrapf(err, "error creating stream %v", name)
 	}
@@ -196,8 +260,13 @@ func CreateStream(data *schema.ResourceData, meta interface{}) error {
 	return ReadStream(data, meta)
 }
 
+<<<<<<< HEAD
 // ReadStream implements schema.ReadFunc
 func ReadStream(data *schema.ResourceData, meta interface{}) error {
+=======
+// ReadStream implements schema.ReadFunc.
+func ReadStream(d *schema.ResourceData, meta interface{}) error {
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
 	db := meta.(*sql.DB)
 	streamID, err := streamIDFromString(data.Id())
 	if err != nil {
@@ -220,7 +289,51 @@ func ReadStream(data *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
+<<<<<<< HEAD
 	err = data.Set("owner", stream.Owner.String)
+=======
+	err = d.Set("database", stream.DatabaseName.String)
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("schema", stream.SchemaName.String)
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("on_table", stream.TableName.String)
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("on_view", stream.ViewName.String)
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("append_only", stream.Mode.String == "APPEND_ONLY")
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("insert_only", stream.Mode.String == "INSERT_ONLY")
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("show_initial_rows", stream.ShowInitialRows)
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("comment", stream.Comment.String)
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("owner", stream.Owner.String)
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
 	if err != nil {
 		return err
 	}
@@ -228,8 +341,13 @@ func ReadStream(data *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
+<<<<<<< HEAD
 // DeleteStream implements schema.DeleteFunc
 func DeleteStream(data *schema.ResourceData, meta interface{}) error {
+=======
+// DeleteStream implements schema.DeleteFunc.
+func DeleteStream(d *schema.ResourceData, meta interface{}) error {
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
 	db := meta.(*sql.DB)
 	streamID, err := streamIDFromString(data.Id())
 	if err != nil {
@@ -252,12 +370,18 @@ func DeleteStream(data *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
+<<<<<<< HEAD
 // UpdateStream implements schema.UpdateFunc
 func UpdateStream(data *schema.ResourceData, meta interface{}) error {
 	// https://www.terraform.io/docs/extend/writing-custom-providers.html#error-handling-amp-partial-state
 	data.Partial(true)
 
 	streamID, err := streamIDFromString(data.Id())
+=======
+// UpdateStream implements schema.UpdateFunc.
+func UpdateStream(d *schema.ResourceData, meta interface{}) error {
+	streamID, err := streamIDFromString(d.Id())
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
 	if err != nil {
 		return err
 	}

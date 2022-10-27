@@ -3,19 +3,17 @@ resource snowflake_function_grant grant {
   schema_name     = "schema"
   function_name  = "function"
 
-  arguments   = [
-    {
-      "name": "a",
-      "type": "array"
-    },
-    {
-      "name": "b",
-      "type": "string"
-    }
-  ]
+  arguments {
+    name = "a"
+    type = "array"
+  }
+  arguments {
+    name = "b"
+    type = "string"
+  }
   return_type = "string"
 
-  privilege = "select"
+  privilege = "USAGE"
   roles = [
     "role1",
     "role2",

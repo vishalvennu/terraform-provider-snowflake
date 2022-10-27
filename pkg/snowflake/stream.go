@@ -8,17 +8,30 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// StreamBuilder abstracts the creation of SQL queries for a Snowflake stream
+// StreamBuilder abstracts the creation of SQL queries for a Snowflake stream.
 type StreamBuilder struct {
+<<<<<<< HEAD
 	name       string
 	db         string
 	schema     string
 	onTable    string
 	appendOnly bool
 	comment    string
+=======
+	name            string
+	db              string
+	schema          string
+	externalTable   bool
+	onTable         string
+	onView          string
+	appendOnly      bool
+	insertOnly      bool
+	showInitialRows bool
+	comment         string
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
 }
 
-// QualifiedName prepends the db and schema if set and escapes everything nicely
+// QualifiedName prepends the db and schema if set and escapes everything nicely.
 func (sb *StreamBuilder) QualifiedName() string {
 	var n strings.Builder
 
@@ -49,6 +62,16 @@ func (sb *StreamBuilder) WithOnTable(d string, s string, t string) *StreamBuilde
 	return sb
 }
 
+func (sb *StreamBuilder) WithExternalTable(b bool) *StreamBuilder {
+	sb.externalTable = b
+	return sb
+}
+
+func (sb *StreamBuilder) WithOnView(d string, s string, t string) *StreamBuilder {
+	sb.onView = fmt.Sprintf(`"%v"."%v"."%v"`, d, s, t)
+	return sb
+}
+
 func (sb *StreamBuilder) WithAppendOnly(b bool) *StreamBuilder {
 	sb.appendOnly = false
 
@@ -64,7 +87,7 @@ func (sb *StreamBuilder) WithAppendOnly(b bool) *StreamBuilder {
 // Supported DDL operations are:
 //   - CREATE Stream
 //   - ALTER Stream
-//	 - DROP Stream
+//   - DROP Stream
 //   - SHOW Stream
 //
 // [Snowflake Reference](https://docs.snowflake.com/en/sql-reference/sql/create-stream.html)
@@ -76,12 +99,22 @@ func Stream(name, db, schema string) *StreamBuilder {
 	}
 }
 
-// Create returns the SQL statement required to create a stream
+// Create returns the SQL statement required to create a stream.
 func (sb *StreamBuilder) Create() string {
 	q := strings.Builder{}
 	q.WriteString(fmt.Sprintf(`CREATE STREAM %v`, sb.QualifiedName()))
 
-	q.WriteString(fmt.Sprintf(` ON TABLE %v`, sb.onTable))
+	q.WriteString(` ON`)
+
+	if sb.onTable != "" {
+		if sb.externalTable {
+			q.WriteString(` EXTERNAL`)
+		}
+
+		q.WriteString(fmt.Sprintf(` TABLE %v`, sb.onTable))
+	} else if sb.onView != "" {
+		q.WriteString(fmt.Sprintf(` VIEW %v`, sb.onView))
+	}
 
 	if sb.comment != "" {
 		q.WriteString(fmt.Sprintf(` COMMENT = '%v'`, EscapeString(sb.comment)))
@@ -113,6 +146,7 @@ func (sb *StreamBuilder) Show() string {
 }
 
 type descStreamRow struct {
+<<<<<<< HEAD
 	CreatedOn    sql.NullString `db:"created_on"`
 	StreamName   sql.NullString `db:"name"`
 	DatabaseName sql.NullString `db:"database_name"`
@@ -123,6 +157,20 @@ type descStreamRow struct {
 	Type         sql.NullString `db:"type"`
 	Stale        sql.NullString `db:"stale"`
 	Mode         sql.NullString `db:"mode"`
+=======
+	CreatedOn       sql.NullString `db:"created_on"`
+	StreamName      sql.NullString `db:"name"`
+	DatabaseName    sql.NullString `db:"database_name"`
+	SchemaName      sql.NullString `db:"schema_name"`
+	Owner           sql.NullString `db:"owner"`
+	Comment         sql.NullString `db:"comment"`
+	ShowInitialRows bool           `db:"show_initial_rows"`
+	TableName       sql.NullString `db:"table_name"`
+	ViewName        sql.NullString `db:"view_name"`
+	Type            sql.NullString `db:"type"`
+	Stale           sql.NullString `db:"stale"`
+	Mode            sql.NullString `db:"mode"`
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
 }
 
 func ScanStream(row *sqlx.Row) (*descStreamRow, error) {
@@ -130,3 +178,23 @@ func ScanStream(row *sqlx.Row) (*descStreamRow, error) {
 	e := row.StructScan(t)
 	return t, e
 }
+<<<<<<< HEAD
+=======
+
+func ListStreams(databaseName string, schemaName string, db *sql.DB) ([]descStreamRow, error) {
+	stmt := fmt.Sprintf(`SHOW STREAMS IN SCHEMA "%s"."%v"`, databaseName, schemaName)
+	rows, err := Query(db, stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	dbs := []descStreamRow{}
+	err = sqlx.StructScan(rows, &dbs)
+	if err == sql.ErrNoRows {
+		log.Println("[DEBUG] no stages found")
+		return nil, nil
+	}
+	return dbs, errors.Wrapf(err, "unable to scan row for %s", stmt)
+}
+>>>>>>> d5ae88ef611ecf770c2d56552876f531074e119a
